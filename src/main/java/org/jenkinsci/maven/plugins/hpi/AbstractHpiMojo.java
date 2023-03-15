@@ -416,17 +416,15 @@ public abstract class AbstractHpiMojo extends AbstractJenkinsMojo {
         throws IOException {
         if (!resource.getDirectory().equals(webappDirectory.getPath())) {
             getLog().info("Copy webapp webResources to " + webappDirectory.getAbsolutePath());
-            if (webappDirectory.exists()) {
-                String[] fileNames = getWarFiles(resource);
-                for (String fileName : fileNames) {
-                    if (resource.isFiltering()) {
-                        copyFilteredFile(new File(resource.getDirectory(), fileName),
-                            new File(webappDirectory, fileName), null, getFilterWrappers(),
-                            filterProperties);
-                    } else {
-                        FileUtils.copyFileIfModified(new File(resource.getDirectory(), fileName),
-                            new File(webappDirectory, fileName));
-                    }
+            String[] fileNames = getWarFiles(resource);
+            for (String fileName : fileNames) {
+                if (resource.isFiltering()) {
+                    copyFilteredFile(new File(resource.getDirectory(), fileName),
+                        new File(webappDirectory, fileName), null, getFilterWrappers(),
+                        filterProperties);
+                } else {
+                    FileUtils.copyFileIfModified(new File(resource.getDirectory(), fileName),
+                        new File(webappDirectory, fileName));
                 }
             }
         }

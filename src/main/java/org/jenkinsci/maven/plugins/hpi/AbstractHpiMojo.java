@@ -19,15 +19,9 @@ package org.jenkinsci.maven.plugins.hpi;
 import com.google.common.collect.Sets;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.io.Reader;
-import java.io.Writer;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +30,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
@@ -59,7 +54,7 @@ import org.codehaus.plexus.archiver.manager.ArchiverManager;
 import org.codehaus.plexus.archiver.manager.NoSuchArchiverException;
 import org.codehaus.plexus.util.DirectoryScanner;
 import org.codehaus.plexus.util.FileUtils;
-import org.codehaus.plexus.util.IOUtil;
+import org.codehaus.plexus.util.FileUtils.FilterWrapper;
 import org.codehaus.plexus.util.InterpolationFilterReader;
 import org.codehaus.plexus.util.PropertyUtils;
 import org.codehaus.plexus.util.StringUtils;
@@ -358,6 +353,7 @@ public abstract class AbstractHpiMojo extends AbstractJenkinsMojo {
             if (webResources != null && webResources.size() > 0) {
                 Properties filterProperties = getBuildFilterProperties();
                 for (Resource resource : webResources) {
+                    
                     copyResources(resource, webappDirectory, filterProperties);
                 }
             }
@@ -416,17 +412,17 @@ public abstract class AbstractHpiMojo extends AbstractJenkinsMojo {
         throws IOException {
         if (!resource.getDirectory().equals(webappDirectory.getPath())) {
             getLog().info("Copy webapp webResources to " + webappDirectory.getAbsolutePath());
-            String[] fileNames = getWarFiles(resource);
-            for (String fileName : fileNames) {
-                if (resource.isFiltering()) {
-                    copyFilteredFile(new File(resource.getDirectory(), fileName),
-                        new File(webappDirectory, fileName), null, getFilterWrappers(),
-                        filterProperties);
-                } else {
-                    FileUtils.copyFileIfModified(new File(resource.getDirectory(), fileName),
-                        new File(webappDirectory, fileName));
+            //if (webappDirectory.exists()) {
+                String[] fileNames = getWarFiles(resource);
+                for (String fileName : fileNames) {
+                    if (resource.isFiltering()) {
+                        FileUtils.copyFile(new File(resource.getDirectory(), fileName), new File(webappDirectory, fileName), StandardCharsets.UTF_8.name(), getFilterWrappers(filterProperties));
+                    } else {
+                        FileUtils.copyFileIfModified(new File(resource.getDirectory(), fileName),
+                            new File(webappDirectory, fileName));
+                    }
                 }
-            }
+            //}
         }
     }
 
@@ -765,61 +761,22 @@ public abstract class AbstractHpiMojo extends AbstractJenkinsMojo {
         return scanner.getIncludedFiles();
     }
 
-    private FilterWrapper[] getFilterWrappers() {
+    private FilterWrapper[] getFilterWrappers(final Map<?,Object> properties) {
         return new FilterWrapper[]{
             // support ${token}
             new FilterWrapper() {
                 @Override
-                public Reader getReader(Reader fileReader, Properties filterProperties) {
-                    return new InterpolationFilterReader(fileReader, filterProperties, "${", "}");
+                public Reader getReader(Reader fileReader) {
+                    return new InterpolationFilterReader(fileReader, properties, "${", "}");
                 }
             },
             // support @token@
             new FilterWrapper() {
                 @Override
-                public Reader getReader(Reader fileReader, Properties filterProperties) {
-                    return new InterpolationFilterReader(fileReader, filterProperties, "@", "@");
+                public Reader getReader(Reader fileReader) {
+                    return new InterpolationFilterReader(fileReader, properties, "@", "@");
                 }
             }};
-    }
-
-    /**
-     * @throws IOException TO DO: Remove this method when Maven moves to plexus-utils version 1.4
-     */
-    private static void copyFilteredFile(File from, File to, String encoding, FilterWrapper[] wrappers,
-                                         Properties filterProperties)
-        throws IOException {
-        // buffer so it isn't reading a byte at a time!
-        Reader fileReader = null;
-        Writer fileWriter = null;
-        try {
-            // fix for MWAR-36, ensures that the parent dir are created first
-            Files.createDirectories(to.toPath().getParent());
-
-            if (encoding == null || encoding.length() < 1) {
-                fileReader = Files.newBufferedReader(from.toPath(), StandardCharsets.UTF_8);
-                fileWriter = Files.newBufferedWriter(to.toPath(), StandardCharsets.UTF_8);
-            } else {
-                FileInputStream instream = new FileInputStream(from);
-
-                FileOutputStream outstream = new FileOutputStream(to);
-
-                fileReader = new BufferedReader(new InputStreamReader(instream, encoding));
-
-                fileWriter = new OutputStreamWriter(outstream, encoding);
-            }
-
-            Reader reader = fileReader;
-            for (FilterWrapper wrapper : wrappers) {
-                reader = wrapper.getReader(reader, filterProperties);
-            }
-
-            IOUtil.copy(reader, fileWriter);
-        }
-        finally {
-            IOUtil.close(fileReader);
-            IOUtil.close(fileWriter);
-        }
     }
 
     /**
@@ -852,13 +809,6 @@ public abstract class AbstractHpiMojo extends AbstractJenkinsMojo {
             LOGGER.log(Level.FINE, "Failed to run git rev-parse HEAD",e);
             return null;
         }
-    }
-
-    /**
-     * TO DO: Remove this interface when Maven moves to plexus-utils version 1.4
-     */
-    private interface FilterWrapper {
-        Reader getReader(Reader fileReader, Properties filterProperties);
     }
 
     /**
